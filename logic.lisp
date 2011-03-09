@@ -119,3 +119,42 @@
 (defun force (proc)
   "Call an earlier promise."
   (proc))
+
+
+;; alonzo church
+(defun my-cons (x y)
+  (lambda (m) (funcall m x y)))
+
+(defun my-car (x)
+  (funcall x (lambda (a d) a)))
+
+(defun my-cdr (x)
+  (funcall x (lambda (a d) d)))
+
+(my-car (my-cons 1 2))
+
+;; modified so it can be assigned
+(defun my-cons (x y)
+  (lambda (m) (funcall m
+		  x 
+		  y
+		  (lambda (n) (setf x n)) 
+		  (lambda (n) (setf y n)))))
+
+(defun my-car (x)
+  (funcall x (lambda (a d sa sd) a)))
+
+(defun my-cdr (x)
+  (funcall x (lambda (a d sa sd) d)))
+
+(defun set-car! (x n)
+  (funcall x (lambda (a d sa sd) (funcall sa n))))
+
+(defun set-cdr! (x n)
+  (funcall x (lambda (a d sa sd) (funcall sd n))))
+
+(my-car (my-cons 1 2))
+
+(let ((q (my-cons 1 2)))
+ (set-car! q 3)
+ (my-car q))
