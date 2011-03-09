@@ -83,7 +83,24 @@
 ; add thing at time 5 -> you need header cell for that
 ; deleting if queue empty ...
 
-
+(defun make-agenda ()
+  (cons 'agenda nil))
+(defun empty-agenda-p (a)
+  (null (cdr a)))
+#+nil
+(empty-agenda-p (make-agenda))
+(defun segment-time (s)
+  (car s))
+(defun segment-queue (s)
+  (cdr s))
+(defun first-item (a)
+  (cat (front-queue (segment-queue (cdr a)))))
+(defun remove-first-item! (a)
+  (let* ((q (segment-queue (cdr a)))
+	 (e (delete-queue! q)))
+    (when (empty-queue-p q)
+      (setf (cdr a) (cddr a)))
+    e))
 
 (defun call-each (procedures)
   (cond ((null procedures) 'done)
