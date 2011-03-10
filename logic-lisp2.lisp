@@ -244,6 +244,7 @@
 					(current-time *the-agenda*)
 					(get-signal wire))))))
 (progn
+  (terpri)
   (setf *the-agenda* (make-agenda))
   (let ((i1 (make-wire))
 	(i2 (make-wire))
@@ -253,4 +254,6 @@
     (probe 'carry carry)
     (half-adder i1 i2 sum carry)
     (set-signal! i1 1)
+    (propagate)
+    (set-signal! i2 1)
     (propagate)))
