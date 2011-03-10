@@ -2,25 +2,7 @@
 
 (defparameter *inverter-delay* 2)
 (defparameter *and-gate-delay* 3)
-
-; queue
-; add to add end and delete add beginning
-; (make-queue)                     -> new queue
-; (insert-queue! queue item) ; insert in the back       
-; (delete-queue! queue) ; deletes first thing
-; (front-queue queue)
-; (empty-queue? queue)
-;; (cons front rear)
-;; front = (cons 1 rear)
-;; rear = (cons 2 nil)
-
-;; adding new = (cons 3 nil)
-;; change cdr rear to point to new
-;; and rear to new
-;; the first one is add front pointer
-;; delete first item move front to 2 
-; (set-car! <pair> <value>) ; i don't need that
-; (set-cdr! <pair> <value>) 
+(defparameter *or-gate-delay* 5)
 
 (defun make-queue ()
   (cons nil nil))
@@ -74,22 +56,6 @@
   (insert-queue! m 2)
   m)
 
-
-
-
-
-; data structure for agenda
-; (current-time agenda)
-; empty-agenda?
-; (add-to-agenda! time action agenda)
-; first-item
-; remove-first-item!
-; (cons *agenda* (cons (cons 10 (make-queue)) (cons (cons 30 (make-queue)) nil)))
-; add thing to time 10 -> just increase queue
-; add thing at time 20 -> insert another segment between 10 and 30
-;   change cddr of agenda to point to new cons and its cdr should point to the cdddr
-; add thing at time 5 -> you need header cell for that
-; deleting if queue empty ...
 
 ;; the agenda is made up of time segments. each segment is a pair of a
 ;; number and a queue. the queue holds the scheduled procedures
@@ -166,65 +132,7 @@
 	(set-current-time! agenda (segment-time first-seg))
 	(front-queue (segment-queue first-seg)))))
 
-(defun make-agenda ()
-  (cons 'agenda nil))
-(defun empty-agenda-p (a)
-  (null (cdr a)))
-#+nil
-(empty-agenda-p (make-agenda))
-(defun segment-time (s)
-  (car s))
-(defun segment-queue (s)
-  (cdr s))
-(defun first-item (a) "Returns an action."
-  (car (front-queue (segment-queue (cdr a)))))
-(defun current-time (a)
-  (segment-time (cdr a)))
-(defun remove-first-item! (a)
-  (unless (empty-agenda-p a)
-   (let* ((q (segment-queue (cdr a)))
-	  (e (delete-queue! q)))
-     (when (empty-queue-p q)
-       (setf (cdr a) (cddr a)))
-     e)))
-(defun add-to-agenda! (time action agenda)
-  (flet ((insert (front rear)
-	   (let* ((new (cons time 
-			     (insert-queue! (make-queue)
-					    action)))
-		  (dispatch (cons new rear)))
-	     (setf (cdr front) dispatch))))
-   (if (empty-agenda-p agenda)
-       (insert agenda nil)
-       (dolist (e (cdr agenda))
-	 (destructuring-bind (tim q) e
-	   (format t "~a~%" (list 'tim tim 'q q 'time time))
-	   (cond ((= tim time) 
-		  ;; there is a segment for exactly the time we need
-		  (insert-queue! q action))
-		 ((and (cdr e)
-		       (< tim time (cdar e)))
-		  ;; we have to insert a new segment between e and its successor
-		  (insert e (cddr e)))
-		 ((and (null (cdr e))
-		       (< tim time))
-		  ;; insert a new segment at the end
-		  (insert e nil))
-		 ((< time tim)
-		  ;; insert a new segment infront of e
-		  ;; this can only happen at the front of the segment list
-		  (assert (eq (cdr agenda) e))
-		  (insert agenda e))
-		 (t (error "didn't find a place to insert ~a"
-			   (list time action)))))))))
-
-#+nil
-(let ((a (make-agenda)))
-  (add-to-agenda! 10 'act1 a)
-  (add-to-agenda! 20 'twenty a)
-  a)
-
-(defparamater *the-agenda* (make-agenda))
+(defparameter *the-agenda* (make-agenda))
 
 (defun call-each (procedures)
   (cond ((null procedures) 'done)
@@ -245,33 +153,34 @@
 		  action *the-agenda*))
 
 (defun propagate ()
-  (cond ((empty-agenda-p *the-agenda*) 'done)
-	(t (funcall (first-item *the-agenda*))
-	   (remove-first-item! *the-agenda*)
-	   (propagate))))
+  (unless (empty-agenda-p *the-agenda*)
+    (funcall (first-agenda-item *the-agenda*))
+    (remove-first-agenda-item! *the-agenda*)
+    (propagate)))
 
 
 (defun make-wire ()
-  (let ((signal 0)
-	(action-procs nil))
-    (labels ((set-my-signal! (new)
-	     (cond ((= signal new) 'done)
-		   (t (setf signal new)
-		      (call-each action-procs))))
-	     (accept-action-proc (proc)
-	       (setf action-procs (cons proc action-procs))
-	     (funcall proc))
+  (let ((signal-value 0)
+	(action-procedures '()))
+    (labels ((set-my-signal! (new-value)
+	       (unless (= signal-value new-value)
+		 (setf signal-value new-value)
+		 (call-each action-procedures)))
+	     (accept-action-procedure! (procedure)
+	       (setf action-procedures 
+		     (cons procedure action-procedures))
+	       (funcall procedure))
 	     (dispatch (m)
-	       (cond ((eq m 'get-signal) signal)
+	       (cond ((eq m 'get-signal) signal-value)
 		     ((eq m 'set-signal!) #'set-my-signal!)
+		     ((eq m 'add-action!) #'accept-action-procedure!)
 		     (t (error "Bad message ~a" m)))))
       #'dispatch)))
 
 
 (defun logical-not (s)
-  (cond ((= s 0) 1)
-	((= s 1) 0)
-	(t (error "invalid signal ~a" s))))
+  (declare (type (integer 0 1) s))
+  (if (= s 0) 1 0))
 
 (defun inverter (in out)
   (flet ((inverter-in ()
@@ -281,16 +190,36 @@
 			    (set-signal! out new))))))
     (add-action! in #'inverter-in)))
 
+(defun logical-and (a b)
+  (declare (type (integer 0 1) a b))
+  (if (and (= a 1) (= b 1))
+      1 0))
+
 (defun and-gate (a1 a2 output)
   (flet ((and-action-procedure ()
-	   (let ((new-value (logandc2 (get-signal a1) (get-signal a2))))
+	   (let ((new-value (logical-and (get-signal a1)
+					 (get-signal a2))))
 	     (after-delay *and-gate-delay*
 			  (lambda ()
 			    (set-signal! output new-value))))))
     (add-action! a1 #'and-action-procedure)
     (add-action! a2 #'and-action-procedure)))
 
-#+nil
+(defun logical-or (a b)
+  (declare (type (integer 0 1) a b))
+  (if (or (= a 1) (= b 1))
+      1 0))
+
+(defun or-gate (a1 a2 output)
+  (flet ((or-action-procedure ()
+	   (let ((new-value (logical-or (get-signal a1)
+					(get-signal a2))))
+	     (after-delay *or-gate-delay*
+			  (lambda ()
+			    (set-signal! output new-value))))))
+    (add-action! a1 #'or-action-procedure)
+    (add-action! a2 #'or-action-procedure)))
+
 (defun half-adder (a b s c)
   (let ((d (make-wire))
 	(e (make-wire)))
@@ -299,7 +228,6 @@
     (inverter c e)
     (and-gate d e s)))
 
-#+nil
 (defun full-adder (a b c-in sum c-out)
   (let ((s (make-wire))
 	(c1 (make-wire))
@@ -307,3 +235,22 @@
     (half-adder b c-in s c1)
     (half-adder a s sum c2)
     (or-gate c1 c2 c-out)))
+
+
+(defun probe (name wire)
+  (add-action! wire
+	       (lambda ()
+		 (format t "~a~%" (list name
+					(current-time *the-agenda*)
+					(get-signal wire))))))
+(progn
+  (setf *the-agenda* (make-agenda))
+  (let ((i1 (make-wire))
+	(i2 (make-wire))
+	(sum (make-wire))
+	(carry (make-wire)))
+    (probe 'sum sum)
+    (probe 'carry carry)
+    (half-adder i1 i2 sum carry)
+    (set-signal! i1 1)
+    (propagate)))
