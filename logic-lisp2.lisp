@@ -1,3 +1,5 @@
+(declaim (optimize (speed 0) (safety 3) (debug 3) (space 0) (compilation-speed 0)))
+
 (defparameter *inverter-delay* 2)
 (defparameter *and-gate-delay* 3)
 
@@ -66,7 +68,6 @@
   (front-queue m))
 
 
-(defparamater *the-agenda* (make-agenda))
 
 
 
@@ -83,6 +84,81 @@
 ; add thing at time 5 -> you need header cell for that
 ; deleting if queue empty ...
 
+;; the agenda is made up of time segments. each segment is a pair of a
+;; number and a queue. the queue holds the scheduled procedures
+(defun make-time-segment (time queue)
+  (cons time queue))
+(defun segment-time (s) (car s))
+(defun segment-queue (s) (cdr s))
+
+;; the agenda is a 1d table of time segments, sorted in the order of
+;; increasing time. in addition the current time (the time of the last
+;; action that was processed) is stored at the head of the agenda.  a
+;; newly constructed agenda has no time segments and a current time of
+;; 0.
+
+(defun make-agenda () (list 0))
+(defun current-time (agenda) (car agenda))
+(defun set-current-time! (agenda time)
+  (setf (car agenda) time))
+(defun segments (agenda)
+  (cdr agenda))
+(defun set-segments! (agenda segments)
+  (setf (cdr agenda) segments))
+(defun first-segment (agenda)
+  (car (segments agenda)))
+(defun rest-segments (agenda)
+  (cdr (segments agenda)))
+(defun empty-agenda-p (agenda)
+  (null (segments agenda)))
+
+;; for adding action to empty agenda create time-segment and attach
+;; if agenda is non-empty, search a segment of appointed time and add action
+;; to the associated queue 
+;; if we reach a time later than the appointed, insert a new time-segment
+;; if end of agenda is reached add a time-segment at its end
+
+(defun add-to-agenda! (time action agenda)
+  (labels ((belongs-before-p (segments)
+	     (or (null segments)
+		 (< time (segment-time (car segments)))))
+	   (make-new-time-segment (time action)
+	     (let ((q (make-queue)))
+	       (insert-queue! q action)
+	       (make-time-segment time q)))
+	   (add-to-segments! (segments)
+	     (if (= time (segment-time (car segments)))
+		 (insert-queue! (segment-queue (car segments))
+				action)
+		 (let ((rest (cdr segments)))
+		   (if (belongs-before-p rest)
+		       (setf (cdr segments)
+			     (cons (make-new-time-segment time action)
+				 (cdr segments)))
+		       (add-to-segments! rest))))))
+    (let ((segments (segments agenda)))
+      (if (belongs-before-p segments)
+	  (set-segments! agenda
+			 (cons (make-new-time-segment time action)
+			       segments))
+	  (add-to-segments! segments)))))
+
+;; if queue time-segment is emptied, remove from list of segments 
+(defun remove-first-agenda-item! (agenda)
+  (let ((q (segment-queue (first-segment agenda))))
+    (delete-queue! q)
+    (when (empty-queue-p q)
+      (set-segments! agenda (rest-segments agenda)))))
+
+;; first item is at the head of the queue of first segment. update
+;; current time, whenever an item is extracted
+(defun first-agenda-item (agenda)
+  (if (empty-agenda-p agenda)
+      (error "Agenda is empty.")
+      (let ((first-seg (first-segment agenda)))
+	(set-current-time! agenda (segment-time first-seg))
+	(front-queue (segment-queue first-seg)))))
+
 (defun make-agenda ()
   (cons 'agenda nil))
 (defun empty-agenda-p (a)
@@ -93,14 +169,55 @@
   (car s))
 (defun segment-queue (s)
   (cdr s))
-(defun first-item (a)
-  (cat (front-queue (segment-queue (cdr a)))))
+(defun first-item (a) "Returns an action."
+  (car (front-queue (segment-queue (cdr a)))))
+(defun current-time (a)
+  (segment-time (cdr a)))
 (defun remove-first-item! (a)
-  (let* ((q (segment-queue (cdr a)))
-	 (e (delete-queue! q)))
-    (when (empty-queue-p q)
-      (setf (cdr a) (cddr a)))
-    e))
+  (unless (empty-agenda-p a)
+   (let* ((q (segment-queue (cdr a)))
+	  (e (delete-queue! q)))
+     (when (empty-queue-p q)
+       (setf (cdr a) (cddr a)))
+     e)))
+(defun add-to-agenda! (time action agenda)
+  (flet ((insert (front rear)
+	   (let* ((new (cons time 
+			     (insert-queue! (make-queue)
+					    action)))
+		  (dispatch (cons new rear)))
+	     (setf (cdr front) dispatch))))
+   (if (empty-agenda-p agenda)
+       (insert agenda nil)
+       (dolist (e (cdr agenda))
+	 (destructuring-bind (tim q) e
+	   (format t "~a~%" (list 'tim tim 'q q 'time time))
+	   (cond ((= tim time) 
+		  ;; there is a segment for exactly the time we need
+		  (insert-queue! q action))
+		 ((and (cdr e)
+		       (< tim time (cdar e)))
+		  ;; we have to insert a new segment between e and its successor
+		  (insert e (cddr e)))
+		 ((and (null (cdr e))
+		       (< tim time))
+		  ;; insert a new segment at the end
+		  (insert e nil))
+		 ((< time tim)
+		  ;; insert a new segment infront of e
+		  ;; this can only happen at the front of the segment list
+		  (assert (eq (cdr agenda) e))
+		  (insert agenda e))
+		 (t (error "didn't find a place to insert ~a"
+			   (list time action)))))))))
+
+#+nil
+(let ((a (make-agenda)))
+  (add-to-agenda! 10 'act1 a)
+  (add-to-agenda! 20 'twenty a)
+  a)
+
+(defparamater *the-agenda* (make-agenda))
 
 (defun call-each (procedures)
   (cond ((null procedures) 'done)
@@ -159,7 +276,7 @@
 
 (defun and-gate (a1 a2 output)
   (flet ((and-action-procedure ()
-	   (let ((new-value (logic-and (get-signal a1) (get-signal a2))))
+	   (let ((new-value (logandc2 (get-signal a1) (get-signal a2))))
 	     (after-delay *and-gate-delay*
 			  (lambda ()
 			    (set-signal! output new-value))))))
