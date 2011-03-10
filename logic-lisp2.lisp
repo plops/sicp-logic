@@ -23,49 +23,56 @@
 ; (set-cdr! <pair> <value>) 
 
 (defun make-queue ()
-  (let ((front (cons nil nil)))
-   (cons front front)))
+  (cons nil nil))
 #+nil
 (make-queue)
 
-(defmacro front-queue (queue)
+(defmacro front-ptr (queue)
   `(car ,queue))
 #+nil
 (front-queue (make-queue))
 
-(defmacro rear-queue (queue)
+(defmacro rear-ptr (queue)
   `(cdr ,queue))
-
+;; a queue is empty when the front pointer is empty
 (defun empty-queue-p (queue)
-  (null (car (front-queue queue))))
+  (null (front-ptr queue)))
 #+nil
 (empty-queue-p (make-queue))
 
+(defun front-queue (queue)
+  "Select first item."
+  (if (empty-queue-p queue)
+      (error "Queue is empty.")
+      (car (front-ptr queue))))
+
+;; in an empty queue the front and rear pointer are set to item,
+;; in a filled list the cdr of the last element and the rear ptr
 (defun insert-queue! (queue item)
-  (if (empty-queue-p queue) 
-      (setf (car (front-queue queue)) item)
-      (let ((new (cons item nil)))
-	(setf (cdr (rear-queue queue)) new
-	      (rear-queue queue) new))))
+  (let ((new-pair (cons item nil)))
+    (if (empty-queue-p queue) 
+	  (setf (front-ptr queue) new-pair
+		(rear-ptr queue) new-pair)
+	  (setf (cdr (rear-ptr queue)) new-pair
+		(rear-ptr queue) new-pair))
+    queue))
+
 #+nil
 (let ((m (make-queue)))
   (dotimes (i 4) (insert-queue! m i))
-  (front-queue m))
+  m)
 
 (defun delete-queue! (queue)
-  (let* ((front (front-queue queue))
-	(new-front (cdr front)))
-    (if new-front
-	(setf (front-queue queue) new-front)
-	;; less than one element
-	(setf (car front) nil))
-    (car front)))
+  (when (empty-queue-p queue)
+	(error "Queue is empty."))
+  (setf (front-ptr queue) (cdr (front-ptr queue)))
+  queue)
 #+nil
 (let ((m (make-queue)))
   (dotimes (i 4) (insert-queue! m i))
-  (dotimes (i 4) (delete-queue! m))
+  (dotimes (i 3) (delete-queue! m))
   (insert-queue! m 2)
-  (front-queue m))
+  m)
 
 
 
